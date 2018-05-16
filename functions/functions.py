@@ -28,34 +28,42 @@ def get_similar(product: str, num = 5, same_model = True):
     # Список похожих товаров из модели.
     # Умножаем на 20, чтобы увеличить вероятность товаров одной модели
     similars = model.most_similar([product], topn=num*100)
-    print('Список похожих артикулов загружен: {} штук'.format(len(similars)))
 
     # Преобразуем
     similars_df = pd.DataFrame(similars, columns=['product', 'probability'])
-    print('Список конвертирован в DataFrame: {} штук'.format(len(similars_df)))
 
     # Подтягиваем модель и название
     similars_df = similars_df.merge(code_model_name, on='product')
-    print('Модель и название загружены: {} штук'.format(len(similars_df)))
 
     # удаляем текущий артикул, если он попадает в список
     similars_df = similars_df[similars_df['product'] != product]
-    print('Текущий артикул удален: {} штук'.format(len(similars_df)))
 
     # удаляем товары с другими моделями
     if same_model:
         current_model = list(code_model_name[code_model_name['product'] == str(product)]['model_adeo'])[0]
-        print('Текущая модель: {}'.format(current_model))
         similars_df = similars_df[similars_df['model_adeo'] == current_model]
-        print('Список очищен от других моделей: {} штук'.format(len(similars_df)))
 
     similars_df = similars_df.head(num)
-    print('Конечный список готов: {} штук'.format(len(similars_df)))
 
     return similars_df
 
 #%% Предсказать покупки
 
+
+def convert_df(df: pd.DataFrame):
+    result = []
+    models = list(df['model_adeo'].unique())
+    for model in models:
+        result.append({'model': model})
+    return result
+
+
+similar = convert_df(get_similar(str(12317232), num=10, same_model=True))
+
+print(similar)
+
+
+#%%
 
 def get_predicted(products: list, num_codes = 3, num_models = 3, remove_used_models = True):
     """Получить список похожих товаров.
