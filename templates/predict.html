@@ -6,10 +6,15 @@
         <br>
         <br>
     </div>
-    <h1 class="title">Похожие и родственные товары</h1><br>
-    <h1 class="subtitle">Выбранный артикул: {{ product }} - {{ name }}</h1>
+    <h1 class="title">Комплиментарные товары</h1><br>
+    <h1 class="subtitle">Выбранныe артикулы:</h1>
+    {% for n in names %}
+
+        {{ n }}
+        <br>
+    {% endfor %}
     <br>
-    <h1 class="title">Похожие товары</h1>
+    <h1 class="title">Возможные комплиментарные товары</h1>
     {% for model in similar_products %}
         <div class="columns">
         </div>
