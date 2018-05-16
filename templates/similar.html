@@ -46,6 +46,11 @@
       <div class="column">
       </div>
     </div>
+    <div class="columns">
+        {% for model in similar_products %}
+            {{ model }}
+        {% endfor %}
+    </div>
 </div>
 
 {% endblock %}
