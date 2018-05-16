@@ -54,11 +54,6 @@ def get_similar(product: str, num = 5, same_model = True):
 
     return similars_df
 
-#%% Тест
-
-
-print(get_similar('18669554', num=10, same_model=True))
-
 #%% Предсказать покупки
 
 
@@ -117,15 +112,3 @@ def get_predicted(products: list, num_codes = 3, num_models = 3, remove_used_mod
         result[all_models[mod]] = predicted[predicted['model_adeo'] == all_models[mod]].head(num_codes)
 
     return result
-
-#%%
-
-
-predicted = get_predicted(['15317297'], num_codes=2, num_models = 20, remove_used_models = True)
-
-for key in predicted:
-    print('')
-    print('')
-    print('')
-    print('Модель: {}'.format(key))
-    print(predicted[key])

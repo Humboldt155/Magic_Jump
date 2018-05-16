@@ -46,10 +46,47 @@
       <div class="column">
       </div>
     </div>
-    <div class="columns">
-        {% for model in similar_products %}
-            {{ model }}
+        <div class="columns">
+            {% for model in similar_products[0:3] %}
+                <div class="box">
+                    <strong>{{ model['model'] }}</strong><br>
+                    {% for product in model['products'] %}
+                        {{ product }}
+                    {% endfor %}
+                </div>&#8195;
+            {% endfor %}
+        </div>
+        <div class="columns">
+            {% for model in similar_products[3:6] %}
+                <div class="box">
+                    <strong>{{ model['model'] }}</strong><br>
+                    {% for product in model['products'] %}
+                        {{ product }}
+                    {% endfor %}
+                </div>&#8195;
+            {% endfor %}
+        </div>
+        <div class="columns">
+            {% for model in similar_products[6:9] %}
+                <div class="box">
+                    <strong>{{ model['model'] }}</strong><br>
+                    {% for product in model['products'] %}
+                        {{ product }}
+                    {% endfor %}
+                </div>&#8195;
         {% endfor %}
+        </div>
+        <div class="columns">
+
+            {% for model in similar_products[9:12] %}
+                <div class="box">
+                    <strong>{{ model['model'] }}</strong><br>
+                    {% for product in model['products'] %}
+                        {{ product }}
+                    {% endfor %}
+                </div>&#8195;
+            {% endfor %}
+        </div>
     </div>
 </div>
 
