@@ -87,7 +87,7 @@ def get_simil(product):
         'similar.html', **locals())
 
 
-@app.route('/project/<string:product>/')
+@app.route('/predict/<string:product>/')
 def get_pred(product):
     codes_list = product.split(',')
     names = []
@@ -179,7 +179,7 @@ def get_predicted(products: list, num_codes = 6, num_models = 20, remove_used_mo
 
     similars = []
     for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
+        similars.append(list(analogs.append(get_similar(product, num=4, same_model=True))['product']))
 
     for s in similars:
         for p in s:
@@ -274,3 +274,7 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
     predicted = predicted.sort_values(by='probability', ascending=False)
 
     return predicted
+
+#%% Список инструментов и аксессуаров
+
+
