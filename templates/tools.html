@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+{% block body %}
+
+<div class="container">
+    <div class="columns">
+        <br>
+        <br>
+    </div>
+    <h1 class="title">Комплиментарные товары</h1><br>
+    <h1 class="subtitle">Выбранныe артикулы:</h1>
+    <div class="box">
+        <table class="table">
+            <thead>
+            <tr>
+                <td>Код</td>
+                <td>Наименование</td>
+            </tr>
+            </thead>
+            <tbody>
+            {% for n in names %}
+                <tr>
+                    <td>{{ n[0] }}</td>
+                    <td>{{ n[1] }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <br>
+    <h1 class="title">Инструменты:</h1>
+    {{  }}
+    {% for model in similar_products %}
+        <div class="columns">
+        </div>
+        <div class="columns">
+            <div class="box">
+                <strong>{{ model['model'] }}</strong><br>
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <td>
+                            Код
+                        </td>
+                        <td>
+                            Наименование
+                        </td>
+                        <td>
+                            Вероятность, %
+                        </td>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for product in model['products'] %}
+                        <tr>
+                            <td>{{ product['code'] }}</td>
+                            <td>{{ product['name'] }}</td>
+                            <td>{{ product['probability'] }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <br>
+        </div>
+    {% endfor %}
+    <br>
+    <br>
+</div>
+
+{% endblock %}
