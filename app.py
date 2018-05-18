@@ -45,7 +45,19 @@ app = Flask(__name__)
 
 
 #  Принимает данные в виде таблицы DF: product, probability, mode_adeo, model_name, date_created, product_name, is_stm
-def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, num_models=10, min_products=10, max_products=10):
+def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, num_models=10, min_products=3, max_products=10, increase_for_stm=0.5):
+    """Конвертировать DataFrame в формат json.
+    Параметры:
+        df(pd.DataFrame): Таблица данных, полученная в результате предсказания
+        sort_by_stm(bool): на первом месте будут товары СТМ, если они есть
+        sort_by_date(bool): товары отсортированы по новизне. Если выбран sort_by_stm, то сначала новинки СТМ
+        num_models(int): Максимальное число моделей к выдаче
+        min_products(int): Минимальное число товаров, которое модет быть в одной модели
+        min_products(int): Максимальное число товаров, которое модет быть в одной модели
+        increase_for_stm(bool): Насколько предварительно увеличить выборку, чтобы повысить шанс товаров СТМ
+    Возвращает:
+        predicted (list): список таблиц pd.DataFrame
+    """
     result = {'models': []}
     models = list(df['model_adeo'].unique())  # список всех моделей адево в таблице
 
@@ -76,7 +88,7 @@ def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, 
                              'is_stm': is_stm,
                              'date_created': date_created
                              })
-        if len(products) < min:
+        if len(products) < min_products:
             continue
         result['models'].append({'model_adeo': model_adeo, 'model_name': model_name, 'products': products})
 
@@ -398,4 +410,6 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
 #     return predicted
 
 #%%
-#similar_products = convert_df(get_tools(['12317232'], num=600), min=1)
+
+
+similar_products = get_similar(str('81946088'), num=200, same_model=True)
