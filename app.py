@@ -30,6 +30,8 @@ bdd_rms = pd.read_excel('library/BDD.xlsx', names=['product',
                                                    'product_name',
                                                    'is_stm'])
 
+bdd_rms['product'] = bdd_rms['product'].astype(str)
+
 
 model = Word2Vec.load(models_list[model_num])
 model_forecast = Word2Vec.load(models_list[3])
@@ -42,31 +44,41 @@ app = Flask(__name__)
 #%% API
 
 
-def convert_df_to_json(df: pd.DataFrame, products_per_model=6, selection_type='analog'):
-    TYPES_SELECTOR = [
-        'analog',
-        'multiple'
-    ]
-    type = TYPES_SELECTOR.index(type)
-    result = []
+#  Принимает данные в виде таблицы DF: product, probability, mode_adeo, model_name, date_created, product_name, is_stm
+def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, num_models=10, min_products=10, max_products=10):
+    result = {'models': []}
     models = list(df['model_adeo'].unique())  # список всех моделей адево в таблице
 
-
-    for model in models:
-        prods = df[df['model_adeo'] == model]
+    for model_adeo in models:
+        model_products = df[df['model_adeo'] == model_adeo]  # фрагмент DataFrame по одной модели
         products = []
-        code_check = []
-        for index, row in prods.iterrows():
-            code = row[0]
-            if code in code_check:
+        model_name = ''
+        product_repeat_check = []  # хранит все коды, для проверки на наличие дублей
+        for index, row in model_products.iterrows():
+            product = row[0]                       # Код продукта
+
+            # Проверка на наличие повторяющихся позиций
+            if product in product_repeat_check:
                 continue
-            probty = round(row[1] * 100, 10)
-            name = row[3]
-            code_check.append(code)
-            products.append({'code': code, 'name': name, 'probability': probty})
+            else:
+                product_repeat_check.append(product)
+
+            product_name = row[5]                  # Название продукта
+            probability = round(row[1] * 100, 10)  # Вероятность
+            is_stm = row[6]                        # Собственная торговая марка
+            model_name = row[2]                    # Название модели
+            date_created = row[4]                  # Дата создания
+
+            # Добавляем атрибуты товара в список товаров
+            products.append({'product': product,
+                             'product_name': product_name,
+                             'probability': probability,
+                             'is_stm': is_stm,
+                             'date_created': date_created
+                             })
         if len(products) < min:
             continue
-        result.append({'model': model, 'products': products[0:6]})
+        result['models'].append({'model_adeo': model_adeo, 'model_name': model_name, 'products': products})
 
     return result
 
