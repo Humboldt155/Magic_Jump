@@ -4,13 +4,6 @@ from flask import Flask, render_template, jsonify
 from gensim.models import Word2Vec
 import pandas as pd
 
-code_model_name = pd.read_excel('library/code_model_name.xlsx',
-                                names=['product',
-                                       'model_adeo',
-                                       'name'])
-
-code_model_name['product'] = code_model_name['product'].astype(str)
-
 model_num = 1  # Какую из моделей использовать
 
 similar_qty = 10  # Количество похожих товаров
@@ -45,7 +38,7 @@ app = Flask(__name__)
 
 
 #  Принимает данные в виде таблицы DF: product, probability, mode_adeo, model_name, date_created, product_name, is_stm
-def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, num_models=10, min_products=3, max_products=10, increase_for_stm=0.5):
+def convert_df_to_json(df: pd.DataFrame):
     """Конвертировать DataFrame в формат json.
     Параметры:
         df(pd.DataFrame): Таблица данных, полученная в результате предсказания
@@ -59,12 +52,16 @@ def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, 
         predicted (list): список таблиц pd.DataFrame
     """
     result = {'models': []}
+
+    #  список всех встречающихся моделей
     models = list(df['model_adeo'].unique())  # список всех моделей адево в таблице
+    assert len(models) > 0, 'Список моделей пуст'
 
     for model_adeo in models:
         model_products = df[df['model_adeo'] == model_adeo]  # фрагмент DataFrame по одной модели
         products = []
         model_name = ''
+
         product_repeat_check = []  # хранит все коды, для проверки на наличие дублей
         for index, row in model_products.iterrows():
             product = row[0]                       # Код продукта
@@ -75,11 +72,11 @@ def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, 
             else:
                 product_repeat_check.append(product)
 
-            product_name = row[5]                  # Название продукта
+            product_name = row[6]                  # Название продукта
             probability = round(row[1] * 100, 10)  # Вероятность
-            is_stm = row[6]                        # Собственная торговая марка
-            model_name = row[2]                    # Название модели
-            date_created = row[4]                  # Дата создания
+            is_stm = row[7]                        # Собственная торговая марка
+            model_name = row[4]                    # Название модели
+            date_created = row[5]                  # Дата создания
 
             # Добавляем атрибуты товара в список товаров
             products.append({'product': product,
@@ -88,86 +85,70 @@ def convert_df_to_json(df: pd.DataFrame, sort_by_stm=False, sort_by_date=False, 
                              'is_stm': is_stm,
                              'date_created': date_created
                              })
-        if len(products) < min_products:
-            continue
-        result['models'].append({'model_adeo': model_adeo, 'model_name': model_name, 'products': products})
 
-    return result
-
-
-@app.route('/analogs/<string:product>/')
-def get_analogs(product):
-
-    analogs = {'products': convert_df(get_similar(str(product), num=similar_qty, same_model=True))[0]['products']}
-
-    return jsonify(analogs)
-
-
-#%%  templates
-
-def convert_df(df: pd.DataFrame, min=6):
-    result = []
-    models = list(df['model_adeo'].unique())
-    for model in models:
-        prods = df[df['model_adeo'] == model]
-        products = []
-        code_check = []
-        for index, row in prods.iterrows():
-            code = row[0]
-            if code in code_check:
-                continue
-            probty = round(row[1] * 100, 10)
-            name = row[3]
-            code_check.append(code)
-            products.append({'code': code, 'name': name, 'probability': probty})
-        if len(products) < min:
-            continue
-        result.append({'model': model, 'products': products[0:6]})
+        result['models'].append({'model_adeo': model_adeo,
+                                 'model_name': model_name,
+                                 'products': products})
 
     return result
 
 #%%
 
-def convert_df_rel(df: pd.DataFrame, pr_remove):
-    current_model = list(code_model_name[code_model_name['product'] == str(pr_remove)]['model_adeo'])[0]
-    result = []
-    models = list(df['model_adeo'].unique())
-    for model in models:
-        if model == current_model:
-            continue
-        m_dict = {'model': model}
-        prods = df[df['model_adeo'] == model]
-        products = []
-        for index, row in prods.iterrows():
-            code = row[0]
-            probty = row[1] * 100
-            name = row[3]
-            products.append({'code': code, 'name': name, 'probability': probty})
-        result.append({'model': model, 'products': products[0:5]})
 
-    return result
+@app.route('/analogs/<string:product>/')
+def get_analogs(product):
 
+    #  Получаем датафрейм с аналогами
+    analogs_df_main = get_similar(str(product), num=8, same_model=True)
 
-@app.route('/similars/<string:product>/')
-def get_simil(product):
-    name = list(code_model_name[code_model_name['product'] == str(product)]['name'])[0]
-    similar_products = convert_df(get_similar(str(product), num=similar_qty, same_model=True))
-    relative_products = convert_df_rel(get_similar(str(product), num=200, same_model=False), product)
-    return render_template(
-        'similar.html', **locals())
+    #  Сортируем и отбираем данные, возвращаем датафрейм
+    analogs_df_cut_sort = cut_and_sort(analogs_df_main,
+                                       min_products=1,
+                                       max_products=8,
+                                       sort_by_stm=True,
+                                       sort_by_date=False)
+
+    #  Конвертируем в формат json
+    analogs = convert_df_to_json(analogs_df_cut_sort)
+
+    return jsonify(analogs)
 
 
-@app.route('/predict/<string:product>/')
-def get_pred(product):
-    codes_list = product.split(',')
-    names = []
-    for p in codes_list:
-        code = list(code_model_name[code_model_name['product'] == str(p)]['product'])[0]
-        name = list(code_model_name[code_model_name['product'] == str(p)]['name'])[0]
-        names.append([str(code), str(name)])
-    similar_products = convert_df(get_predicted(codes_list, num_codes=10, num_models=10))
-    return render_template(
-        'predict.html', **locals())
+@app.route('/complementary/<string:products>/')
+def get_complementary(products):
+
+    products_list = products.split(',')
+
+    #  Получаем датафрейм с аналогами
+    analogs_df_main = get_predicted(products_list, num_models=12, num_products=6)
+
+    #  Сортируем и отбираем данные, возвращаем датафрейм
+    analogs_df_cut_sort = cut_and_sort(analogs_df_main,
+                                       min_products=4,
+                                       max_products=8,
+                                       num_models=12,
+                                       sort_by_stm=False,
+                                       sort_by_date=False)
+
+    #  Конвертируем в формат json
+    analogs = convert_df_to_json(analogs_df_cut_sort)
+
+    return jsonify(analogs)
+
+
+#%%
+
+# @app.route('/predict/<string:product>/')
+# def get_pred(product):
+#     codes_list = product.split(',')
+#     names = []
+#     for p in codes_list:
+#         code = list(code_model_name[code_model_name['product'] == str(p)]['product'])[0]
+#         name = list(code_model_name[code_model_name['product'] == str(p)]['name'])[0]
+#         names.append([str(code), str(name)])
+#     similar_products = convert_df(get_predicted(codes_list, num_codes=10, num_models=10))
+#     return render_template(
+#         'predict.html', **locals())
 
 
 # @app.route('/tools/<string:product>/')
@@ -187,29 +168,69 @@ def get_pred(product):
 #     app.run()
 
 
-@app.route('/forecast/<string:product>/')
-def get_forec(product):
-    codes_list = product.split(',')
-    names = []
-    for p in codes_list:
-        code = list(code_model_name[code_model_name['product'] == str(p)]['product'])[0]
-        name = list(code_model_name[code_model_name['product'] == str(p)]['name'])[0]
-        names.append([str(code), str(name)])
-    similar_products = convert_df(get_forecast(codes_list, num_codes=10, num_models=10))
-    return render_template(
-        'forecast.html', **locals())
-
-
-if __name__ == '__main__':
-    app.run()
+# @app.route('/forecast/<string:product>/')
+# def get_forec(product):
+#     codes_list = product.split(',')
+#     names = []
+#     for p in codes_list:
+#         code = list(code_model_name[code_model_name['product'] == str(p)]['product'])[0]
+#         name = list(code_model_name[code_model_name['product'] == str(p)]['name'])[0]
+#         names.append([str(code), str(name)])
+#     similar_products = convert_df(get_forecast(codes_list, num_codes=10, num_models=10))
+#     return render_template(
+#         'forecast.html', **locals())
+#
+#
+# if __name__ == '__main__':
+#     app.run()
 
 
 # функции
+#%%
+
+def cut_and_sort(df: pd.DataFrame,
+                 min_products=4,
+                 max_products=10,
+                 sort_by_stm=False,
+                 sort_by_date=False,
+                 num_models=10,
+                 chance_increase=0):
+
+    assert chance_increase >= 0, 'Увеличение вероятности появления новинки или СТМ не может быть ниже 0'
+
+    models_list = df['model_adeo'].unique()
+
+    chance_qty = int(max_products * (1 + chance_increase))
+
+    models_pack = []
+
+    for model in models_list:
+        model_df = df[df['model_adeo'] == model]
+
+        if model_df.shape[0] < min_products:
+            continue
+
+        model_df = model_df.iloc[0:chance_qty, :]
+
+        if sort_by_date:
+            model_df = model_df.sort_values(by='date_created', ascending=False)
+
+        if sort_by_stm:
+            model_df = model_df.sort_values(by='is_stm', ascending=False)
+
+        model_df = model_df.iloc[0:max_products, :]
+
+        models_pack.append(model_df)
+
+    result_df = pd.concat(models_pack[0:num_models])
+
+    return result_df
+
 
 #%% Список похожих товаров
 
 
-def get_similar(product: str, num = 5, same_model = True):
+def get_similar(product: str, num=5, same_model=True):
     """Получить список похожих товаров.
     Parameters:
         product(str): Код продукта
@@ -218,37 +239,35 @@ def get_similar(product: str, num = 5, same_model = True):
     Возвращает:
         similars: pd.DataFrame: Таблица похожих товаров
     """
-    # Список похожих товаров из модели.
-    # Умножаем на 20, чтобы увеличить вероятность товаров одной модели
 
-    similars = model.most_similar([product], topn=num*100)
+    similars = model.most_similar([product], topn=num*20)
 
     # Преобразуем
     similars_df = pd.DataFrame(similars, columns=['product', 'probability'])
 
     # Подтягиваем модель и название
-    similars_df = similars_df.merge(code_model_name, on='product')
+    similars_df = similars_df.merge(bdd_rms, on='product')
 
     # удаляем текущий артикул, если он попадает в список
     similars_df = similars_df[similars_df['product'] != product]
 
     # удаляем товары с другими моделями
     if same_model:
-        current_model = list(code_model_name[code_model_name['product'] == str(product)]['model_adeo'])[0]
+        current_model = list(bdd_rms[bdd_rms['product'] == str(product)]['model_adeo'])[0]
         similars_df = similars_df[similars_df['model_adeo'] == current_model]
 
-    similars_df = similars_df.head(num)
+    similars_df = similars_df
 
     return similars_df
 
 
 #%% Предсказать покупки
 
-def get_predicted(products: list, num_codes = 6, num_models = 20, remove_used_models = True):
+def get_predicted(products: list, num_models=10, num_products=10, remove_used_models=True):
     """Получить список похожих товаров.
     Parameters:
-        products(str): Код продукта
-        num_codes(int): Топ моделей
+        products(list): Код продукта
+        num_products(int): Топ моделей
         num_models(int): Топ артикулов в каждой модели
         remove_used_models(bool): Не показывать модели, которые были в запросе
     Возвращает:
@@ -257,20 +276,19 @@ def get_predicted(products: list, num_codes = 6, num_models = 20, remove_used_mo
 
     analogs = pd.DataFrame(columns=['product', 'probability', 'model_adeo', 'name'])
 
-    predicted = model.predict_output_word(products, topn=num_codes*num_models*5)
+    predicted = model.predict_output_word(products, topn=num_products*num_models*2)
     predicted = pd.DataFrame(predicted, columns=['product', 'probability'])
 
     similars = []
     for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=4, same_model=True))['product']))
+        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
 
     for s in similars:
         for p in s:
-            pred = model.predict_output_word([str(p)], topn=num_codes*num_models*5)
+            pred = model.predict_output_word([str(p)], topn=num_products*num_models)
             pred = pd.DataFrame(pred, columns=['product', 'probability'])
             pred = pred[pred['product'] != p]
             predicted = predicted.append(pred)
-
 
     predicted = predicted.sort_values(by='probability', ascending=False)
 
@@ -279,27 +297,19 @@ def get_predicted(products: list, num_codes = 6, num_models = 20, remove_used_mo
         predicted = predicted[predicted['product'] != product]
 
     # Подтягиваем модель и название
-    predicted = predicted.merge(code_model_name, on='product')
+    predicted = predicted.merge(bdd_rms, on='product')
 
     if remove_used_models:
         current_models = []
         for product in products:
-            current_models.append(list(code_model_name[code_model_name['product'] == str(product)]['model_adeo'])[0])
+            current_models.append(list(bdd_rms[bdd_rms['product'] == str(product)]['model_adeo'])[0])
         print(current_models)
         for model_adeo in current_models:
             predicted = predicted[predicted['model_adeo'] != model_adeo]
 
     predicted = predicted.sort_values(by='probability', ascending=False)
 
-    # Удалить дубликаты
-
-    #
-    # all_models = list(pd.DataFrame(predicted['model_adeo'].unique())[0])
-    #
-    # result = {}
-    #
-    # for mod in range(0, num_models):
-    #     result[all_models[mod]] = predicted[predicted['model_adeo'] == all_models[mod]].head(num_codes)
+    predicted = predicted.drop_duplicates(subset='product', keep='first')
 
     return predicted
 
@@ -337,19 +347,21 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
 
     predicted['product'] = predicted['product'].str.slice(0, 8)
 
-    predicted = predicted.sort_values(by='probability', ascending=False)
+    predicted = predicted
+
+
 
     # Удаляем позиции, которые в запросе
     for product in products:
         predicted = predicted[predicted['product'] != product]
 
     # Подтягиваем модель и название
-    predicted = predicted.merge(code_model_name, on='product')
+    predicted = predicted.merge(bdd_rms, on='product')
 
     if remove_used_models:
         current_models = []
         for product in products:
-            current_models.append(list(code_model_name[code_model_name['product'] == str(product)]['model_adeo'])[0])
+            current_models.append(list(bdd_rms[bdd_rms['product'] == str(product)]['model_adeo'])[0])
         print(current_models)
         for model_adeo in current_models:
             predicted = predicted[predicted['model_adeo'] != model_adeo]
@@ -412,4 +424,7 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
 #%%
 
 
-similar_products = get_similar(str('81946088'), num=200, same_model=True)
+# similar_products = get_similar(str('81946088'), num=50, same_model=True)
+# similar_products_conv = convert_df_to_json(similar_products)
+
+
