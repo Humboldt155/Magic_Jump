@@ -290,7 +290,7 @@ def get_predicted(products: list, num_models=10, num_products=10, remove_used_mo
 
     similars = []
     for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
+        similars.append(list(analogs.append(get_similar(product, num=4, same_model=True))['product']))
 
     for s in similars:
         for p in s:
