@@ -3,6 +3,7 @@
 from flask import Flask, render_template, jsonify
 from gensim.models import Word2Vec
 import pandas as pd
+from flask_cors import CORS
 
 model_num = 1  # Какую из моделей использовать
 
@@ -33,6 +34,7 @@ model_forecast = Word2Vec.load(models_list[3])
 #%%
 
 app = Flask(__name__)
+CORS(app)
 #%%
 
 #%% API
@@ -120,19 +122,26 @@ def get_complementary(products):
 
     products_list = products.split(',')
 
+    main_product = products_list[0]
+
+    product_name = list(bdd_rms[bdd_rms['product'] == str(main_product)]['product_name'])[0]
+
     #  Получаем датафрейм с аналогами
-    analogs_df_main = get_predicted(products_list, num_models=12, num_products=6)
+    analogs_df_main = get_predicted(products_list, num_models=5, num_products=5)
 
     #  Сортируем и отбираем данные, возвращаем датафрейм
     analogs_df_cut_sort = cut_and_sort(analogs_df_main,
-                                       min_products=4,
-                                       max_products=8,
-                                       num_models=12,
+                                       min_products=3,
+                                       max_products=5,
+                                       num_models=5,
                                        sort_by_stm=False,
                                        sort_by_date=False)
 
     #  Конвертируем в формат json
     analogs = convert_df_to_json(analogs_df_cut_sort)
+
+    analogs.update({'product': main_product})
+    analogs.update({'product_name': product_name})
 
     return jsonify(analogs)
 
@@ -165,8 +174,8 @@ def get_complementary(products):
 #         'tools.html', **locals())
 #
 #
-# if __name__ == '__main__':
-#     app.run()
+if __name__ == '__main__':
+    app.run()
 
 
 # @app.route('/forecast/<string:product>/')
@@ -281,7 +290,7 @@ def get_predicted(products: list, num_models=10, num_products=10, remove_used_mo
 
     similars = []
     for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=5, same_model=True))['product']))
+        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
 
     for s in similars:
         for p in s:
@@ -329,12 +338,12 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
 
     analogs = pd.DataFrame(columns=['product', 'probability', 'model_adeo', 'name'])
 
-    predicted = model_forecast.predict_output_word(products, topn=num_codes*num_models*5)
+    predicted = model_forecast.predict_output_word(products, topn=num_codes*num_models*3)
     predicted = pd.DataFrame(predicted, columns=['product', 'probability'])
 
     similars = []
-    for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
+    for product in products[0]:
+        similars.append(list(analogs.append(get_similar(product, num=3, same_model=True))['product']))
 
     for s in similars:
         for p in s:
