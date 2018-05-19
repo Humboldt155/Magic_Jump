@@ -12,7 +12,8 @@ models_list = [
     'models/word2vec/w2v_mymodel_33',
     'models/word2vec/w2v_mymodel_33_min50_sg0_i220_window5_size300',
     'models/word2vec/w2v_mymodel_33_min50_sg1_i220_window5_size300',
-    'models/word2vec/w2v_mymodel_33_min1000_sg0_i200_window5_size300'
+    'models/word2vec/w2v_mymodel_33_min1000_sg0_i200_window5_size300',
+    'models/word2vec/w2v_mymodel_33_min5_sg0_i250_window3_size300_transSplit'
 ]
 
 bdd_rms = pd.read_excel('library/BDD.xlsx', names=['product',
@@ -185,7 +186,6 @@ def get_complementary(products):
 #     app.run()
 
 
-# функции
 #%%
 
 def cut_and_sort(df: pd.DataFrame,
@@ -281,7 +281,7 @@ def get_predicted(products: list, num_models=10, num_products=10, remove_used_mo
 
     similars = []
     for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
+        similars.append(list(analogs.append(get_similar(product, num=5, same_model=True))['product']))
 
     for s in similars:
         for p in s:
@@ -334,7 +334,7 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
 
     similars = []
     for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=5, same_model=True))['product']))
+        similars.append(list(analogs.append(get_similar(product, num=2, same_model=True))['product']))
 
     for s in similars:
         for p in s:
