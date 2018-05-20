@@ -1,4 +1,5 @@
 # Импортируем библиотеки и файлы
+from datetime import datetime
 
 from flask import Flask, render_template, jsonify
 from gensim.models import Word2Vec
@@ -120,14 +121,22 @@ def get_analogs(product):
 @app.route('/complementary/<string:products>/')
 def get_complementary(products):
 
-    products_list = products.split(',')
+    start_time = datetime.now()
 
+    products_list = products.split(',')
     main_product = products_list[0]
 
     product_name = list(bdd_rms[bdd_rms['product'] == str(main_product)]['product_name'])[0]
 
+
+    # print('Получение названия артикула: {}'.format(datetime.now() - start_time))
+    # new_time = datetime.now()
+
     #  Получаем датафрейм с аналогами
     analogs_df_main = get_predicted(products_list, num_models=5, num_products=5)
+
+    # print('Составление DataFrame предсказания: {}'.format(datetime.now() - new_time))
+    # new_time = datetime.now()
 
     #  Сортируем и отбираем данные, возвращаем датафрейм
     analogs_df_cut_sort = cut_and_sort(analogs_df_main,
@@ -136,6 +145,10 @@ def get_complementary(products):
                                        num_models=5,
                                        sort_by_stm=False,
                                        sort_by_date=False)
+
+    # print('Обрезать и отсортировать: {}'.format(datetime.now() - new_time))
+    # new_time = datetime.now()
+
 
     #  Конвертируем в формат json
     analogs = convert_df_to_json(analogs_df_cut_sort)
@@ -147,19 +160,6 @@ def get_complementary(products):
 
 
 #%%
-
-# @app.route('/predict/<string:product>/')
-# def get_pred(product):
-#     codes_list = product.split(',')
-#     names = []
-#     for p in codes_list:
-#         code = list(code_model_name[code_model_name['product'] == str(p)]['product'])[0]
-#         name = list(code_model_name[code_model_name['product'] == str(p)]['name'])[0]
-#         names.append([str(code), str(name)])
-#     similar_products = convert_df(get_predicted(codes_list, num_codes=10, num_models=10))
-#     return render_template(
-#         'predict.html', **locals())
-
 
 # @app.route('/tools/<string:product>/')
 # def get_too(product):
@@ -249,7 +249,7 @@ def get_similar(product: str, num=5, same_model=True):
         similars: pd.DataFrame: Таблица похожих товаров
     """
 
-    similars = model.most_similar([product], topn=num*20)
+    similars = model.most_similar([product], topn=num*5)
 
     # Преобразуем
     similars_df = pd.DataFrame(similars, columns=['product', 'probability'])
@@ -265,7 +265,7 @@ def get_similar(product: str, num=5, same_model=True):
         current_model = list(bdd_rms[bdd_rms['product'] == str(product)]['model_adeo'])[0]
         similars_df = similars_df[similars_df['model_adeo'] == current_model]
 
-    similars_df = similars_df
+    similars_df = similars_df.head(num)
 
     return similars_df
 
@@ -282,15 +282,25 @@ def get_predicted(products: list, num_models=10, num_products=10, remove_used_mo
     Возвращает:
         predicted (list): список таблиц pd.DataFrame
     """
-
+    start_time = datetime.now()
     analogs = pd.DataFrame(columns=['product', 'probability', 'model_adeo', 'name'])
 
     predicted = model.predict_output_word(products, topn=num_products*num_models*2)
+
+    print('Получено предсказание: {}'.format(datetime.now() - start_time))
+    new_time = datetime.now()
+
     predicted = pd.DataFrame(predicted, columns=['product', 'probability'])
 
+    print('Предсказание конвертировано в DF: {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
+
     similars = []
-    for product in products:
-        similars.append(list(analogs.append(get_similar(product, num=4, same_model=True))['product']))
+    for product in products[0:1]:
+        similars.append(list(analogs.append(get_similar(product, num=3, same_model=True))['product']))
+
+    print('Получены похожие товары в DF: {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
 
     for s in similars:
         for p in s:
@@ -298,27 +308,50 @@ def get_predicted(products: list, num_models=10, num_products=10, remove_used_mo
             pred = pd.DataFrame(pred, columns=['product', 'probability'])
             pred = pred[pred['product'] != p]
             predicted = predicted.append(pred)
+            print(p)
+        print(s)
+
+    print('Получены предсказания для похожих: {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
 
     predicted = predicted.sort_values(by='probability', ascending=False)
+
+    print('Данные отсортированы: {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
 
     # Удаляем позиции, которые в запросе
     for product in products:
         predicted = predicted[predicted['product'] != product]
 
+    print('Удалены лишние позиции: {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
+
     # Подтягиваем модель и название
     predicted = predicted.merge(bdd_rms, on='product')
+
+    print('Подтянуты столбцы: {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
 
     if remove_used_models:
         current_models = []
         for product in products:
             current_models.append(list(bdd_rms[bdd_rms['product'] == str(product)]['model_adeo'])[0])
-        print(current_models)
         for model_adeo in current_models:
             predicted = predicted[predicted['model_adeo'] != model_adeo]
 
+    print('Удалены действующие модели {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
+
     predicted = predicted.sort_values(by='probability', ascending=False)
 
+    print('Отсортированы {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
+
     predicted = predicted.drop_duplicates(subset='product', keep='first')
+
+    print('Удалены дубликаты {}'.format(datetime.now() - new_time))
+    new_time = datetime.now()
+    print('Всего затрачено времени {}'.format(datetime.now() - start_time))
 
     return predicted
 
@@ -336,6 +369,8 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
         predicted (list): список таблиц pd.DataFrame
     """
 
+    start_time = datetime.now()
+
     analogs = pd.DataFrame(columns=['product', 'probability', 'model_adeo', 'name'])
 
     predicted = model_forecast.predict_output_word(products, topn=num_codes*num_models*3)
@@ -345,12 +380,17 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
     for product in products[0]:
         similars.append(list(analogs.append(get_similar(product, num=3, same_model=True))['product']))
 
+    for product in products[0]:
+        similars.append(list(analogs.append(get_similar(product, num=3, same_model=True))['product']))
+
     for s in similars:
         for p in s:
             pred = model_forecast.predict_output_word([str(p)], topn=num_codes*num_models*5)
             pred = pd.DataFrame(pred, columns=['product', 'probability'])
             pred = pred[pred['product'] != p]
             predicted = predicted.append(pred)
+            print(p)
+            print(s)
 
     predicted = predicted[predicted['product'].str.find("+") != -1]
 
