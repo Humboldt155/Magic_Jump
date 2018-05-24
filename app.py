@@ -3,10 +3,14 @@ from datetime import datetime
 
 from flask import Flask, render_template, jsonify
 from gensim.models import Word2Vec
+from gensim.models import KeyedVectors
+from sklearn.cluster import KMeans
 import pandas as pd
+import numpy as np
+
 from flask_cors import CORS
 
-model_num = 0 # Какую из моделей использовать
+model_num = 7 # Какую из моделей использовать
 
 similar_qty = 10  # Количество похожих товаров
 
@@ -14,9 +18,11 @@ models_list = [
     'models/word2vec/w2v_mymodel_33_min50_sg0_i220_window5_size300',               #
     'models/word2vec/w2v_mymodel_33_min1000_sg0_i200_window5_size300',             # ------------
     'models/word2vec/w2v_mymodel_33_min5_sg0_i250_window3_size300_transSplit',     #
-    'models/word2vec/w2v_mymodel_33_min500_sg0_i220_window10_size300_transSplit',  # ------------
+    'models/word2vec/w2v_mymodel_33_min1000_sg0_i200_window5_size300',  # ------------
     'models/word2vec/w2v_mymodel_33_mincount1_min1_sg0_i230_window5_size300',      #
-    'models/word2vec/w2v_mymodel_33_mincount1_min1_sg0_i400_window10_size300',     #
+    'models/word2vec/test_29 of 81 nodes_250 alpha_ 0.0025 epochs_ 100 windows_ 4 time_0_02_20_155266',
+    'models/word2vec/w2v_mymodel_33_minСount5_minSumm30_i220_window6_size160',
+    'models/word2vec/w2v_33m_min20rub_sg0_i240_window7_size150',
 ]
 
 # Общие требования: sg1 - не использовать
@@ -35,16 +41,22 @@ bdd_rms['product'] = bdd_rms['product'].astype(str)
 
 
 model = Word2Vec.load(models_list[model_num])
-model_forecast = Word2Vec.load(models_list[5])
+model_forecast = Word2Vec.load(models_list[3])
 
 app = Flask(__name__)
 CORS(app)
+
+model_clusters = Word2Vec.load('models/word2vec/w2v_33m_min20rub_sg0_i240_window7_size150')
+word_vectors = KeyedVectors.load('models/word2vec/w2v_33m_min20rub_sg0_i240_window7_size150')
+
 
 
 #%% API
 
 @app.route('/analogs/<string:product>/')
 def get_analogs(product):
+
+    start_time = datetime.now()
 
     #  Получаем датафрейм с аналогами
     analogs_df_main = get_similar(str(product), num=5, same_model=True)
@@ -59,6 +71,8 @@ def get_analogs(product):
     #  Конвертируем в формат json
     analogs = convert_df_to_json(analogs_df_cut_sort)
 
+    print('Аналоги, найдены за {}'.format(datetime.now() - start_time))
+
     return jsonify(analogs)
 
 
@@ -71,13 +85,13 @@ def get_complementary(products):
     product_name = list(bdd_rms[bdd_rms['product'] == str(main_product)]['product_name'])[0]
 
     #  Получаем датафрейм с аналогами
-    complementary_df_main = get_predicted(products_list, num_models=5, num_products=5)
+    complementary_df_main = get_predicted(products_list, num_models=7, num_products=5)
 
     #  Сортируем и отбираем данные, возвращаем датафрейм
     complementary_df_cut_sort = cut_and_sort(complementary_df_main,
-                                       min_products=3,
-                                       max_products=5,
-                                       num_models=5,
+                                       min_products=1,
+                                       max_products=3,
+                                       num_models=7,
                                        sort_by_stm=False,
                                        sort_by_date=False)
 
@@ -108,6 +122,28 @@ def get_supplementary(products):
 
     #  Конвертируем в формат json
     supplementary = convert_df_to_json(supplementary_df_cut_sort)
+
+    return jsonify(supplementary)
+
+
+@app.route('/forecast/<string:products>/')
+def get_forec(products):
+
+    products_list = products.split(',')
+
+    #  Получаем датафрейм с аналогами
+    forecast_df_main = get_forecast(products_list, num_models=10, num_products=10)
+
+    #  Сортируем и отбираем данные, возвращаем датафрейм
+    forecast_df_cut_sort = cut_and_sort(forecast_df_main,
+                                       min_products=1,
+                                       max_products=3,
+                                       num_models=2,
+                                       sort_by_stm=False,
+                                       sort_by_date=False)
+
+    #  Конвертируем в формат json
+    supplementary = convert_df_to_json(forecast_df_cut_sort)
 
     return jsonify(supplementary)
 
@@ -170,6 +206,52 @@ def convert_df_to_json(df: pd.DataFrame):
     return result
 
 
+#%%  Получить векторное представление по номеру артикула
+
+@app.route('/cluster/<string:product>/')
+def get_clust(product):
+    num_clusters = 5
+    num_products = 100
+
+    predict = list(pd.DataFrame(model.predict_output_word([product], topn=100))[0])
+    X = list_to_X(predict)
+
+    kmeans = KMeans(n_clusters=num_clusters, init='k-means++', random_state=42)
+    kmeans.fit_predict(X)
+    labels = list(kmeans.labels_)
+
+    products_df = pd.DataFrame(predict, columns=['product']).astype(str)
+    products_df = products_df.merge(bdd_rms, on='product')
+    test = products_df.merge(bdd_rms, on='product')
+
+    products_df['cluster'] = labels
+
+    cluster_list = list(products_df['cluster'].unique())
+
+    clusters_list = []
+    for cl in cluster_list:
+        cluster_df = products_df[products_df['cluster'] == cl]
+        cluster_products = []
+        for index, row in cluster_df.iterrows():
+            product = str(row[0])
+            product_name = str(row[5])
+            cluster_products.append({'product': product, 'product_name': product_name})
+        clusters_list.append({'cluster_num': str(cl + 1), 'products': cluster_products})
+
+    return jsonify({'clusters': clusters_list})
+
+#X = get_clust('18745342')
+
+
+#%%  Получить векторное представление по номеру артикула
+
+
+def list_to_X(products: list):
+    vectors = np.array(list(word_vectors.wv.get_vector(str(prod)) for prod in products))
+    return vectors
+
+
+predict = list(pd.DataFrame(model.predict_output_word(['12317240'], topn=100))[0])
 
 
 #%% Обрезать и отсортировать
@@ -393,45 +475,24 @@ def get_supplement(products: list, num_models=5, num_products=3, remove_used_mod
 
 #%% Прогноз будущих покупок
 
-def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_models = True):
+def get_forecast(products: list, num_models=10, num_products=10, remove_used_models=True):
     """Получить список похожих товаров.
     Parameters:
-        products(str): Код продукта
-        num_codes(int): Топ моделей
+        products(list): Код продукта
+        num_products(int): Топ моделей
         num_models(int): Топ артикулов в каждой модели
         remove_used_models(bool): Не показывать модели, которые были в запросе
     Возвращает:
         predicted (list): список таблиц pd.DataFrame
     """
-
     start_time = datetime.now()
-
     analogs = pd.DataFrame(columns=['product', 'probability', 'model_adeo', 'name'])
 
-    predicted = model_forecast.predict_output_word(products, topn=num_codes*num_models*3)
+    predicted = model_forecast.predict_output_word(products, topn=(len(products) + num_products)*num_models*2)
+
     predicted = pd.DataFrame(predicted, columns=['product', 'probability'])
 
-    similars = []
-    for product in products[0]:
-        similars.append(list(analogs.append(get_similar(product, num=3, same_model=True))['product']))
-
-    for product in products[0]:
-        similars.append(list(analogs.append(get_similar(product, num=3, same_model=True))['product']))
-
-    for s in similars:
-        for p in s:
-            pred = model_forecast.predict_output_word([str(p)], topn=num_codes*num_models*5)
-            pred = pd.DataFrame(pred, columns=['product', 'probability'])
-            pred = pred[pred['product'] != p]
-            predicted = predicted.append(pred)
-            print(p)
-            print(s)
-
-    predicted = predicted[predicted['product'].str.find("+") != -1]
-
-    predicted['product'] = predicted['product'].str.slice(0, 8)
-
-    predicted = predicted
+    predicted = predicted.sort_values(by='probability', ascending=False)
 
     # Удаляем позиции, которые в запросе
     for product in products:
@@ -439,6 +500,13 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
 
     # Подтягиваем модель и название
     predicted = predicted.merge(bdd_rms, on='product')
+
+    print(predicted)
+
+    # оставляем только с плюсом
+    predicted = predicted[predicted['product'].str.find("+") != -1]
+
+    predicted['product'] = predicted['product'].str.slice(0, 8)
 
     if remove_used_models:
         current_models = []
@@ -448,6 +516,8 @@ def get_forecast(products: list, num_codes = 10, num_models = 10, remove_used_mo
             predicted = predicted[predicted['model_adeo'] != model_adeo]
 
     predicted = predicted.sort_values(by='probability', ascending=False)
+
+    predicted = predicted.drop_duplicates(subset='product', keep='first')
 
     return predicted
 
