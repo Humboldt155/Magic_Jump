@@ -1,5 +1,6 @@
 # Импортируем библиотеки и файлы
 from datetime import datetime
+from json import dumps
 
 from flask import Flask, render_template, jsonify
 from gensim.models import Word2Vec
@@ -22,7 +23,7 @@ models_list = [
     'models/word2vec/w2v_mymodel_33_mincount1_min1_sg0_i230_window5_size300',      #
     'models/word2vec/test_29 of 81 nodes_250 alpha_ 0.0025 epochs_ 100 windows_ 4 time_0_02_20_155266',
     'models/word2vec/w2v_mymodel_33_minСount5_minSumm30_i220_window6_size160',
-    'models/word2vec/w2v_33m_min20rub_sg0_i240_window7_size150',
+    'models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size150',
 ]
 
 # Общие требования: sg1 - не использовать
@@ -46,12 +47,39 @@ model_forecast = Word2Vec.load(models_list[3])
 app = Flask(__name__)
 CORS(app)
 
-model_clusters = Word2Vec.load('models/word2vec/w2v_33m_min20rub_sg0_i240_window7_size150')
-word_vectors = KeyedVectors.load('models/word2vec/w2v_33m_min20rub_sg0_i240_window7_size150')
-
+model_clusters = Word2Vec.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size150')
+word_vectors = KeyedVectors.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size150')
 
 
 #%% API
+
+
+@app.route('/most_similar/<string:product>/<int:qty>')
+def get_most_similar(product, qty):
+
+    start_time = datetime.now()
+
+    #  Получаем датафрейм с аналогами
+    most_similar = model.most_similar([str(product)], topn=qty)
+    model_time = datetime.now() - start_time
+    print(model_time)
+    model_time = str('{},{} секунд'.format(model_time.seconds, "%06d" % model_time.microseconds))
+
+    similars_df = pd.DataFrame(most_similar, columns=['product', 'probability'])
+
+    # Подтягиваем модель и название
+    similars_df = similars_df.merge(bdd_rms, on='product')
+
+    #  Конвертируем в формат json
+    similars_dict = similars_df.to_dict('records')
+
+    all_time = datetime.now() - start_time
+    all_time = str('{},{} секунд'.format(all_time.seconds, "%06d" % all_time.microseconds))
+
+    return jsonify({'similars': similars_dict, 'model_time': model_time, 'all_time': all_time})
+
+
+#%%
 
 @app.route('/analogs/<string:product>/')
 def get_analogs(product):
@@ -208,12 +236,15 @@ def convert_df_to_json(df: pd.DataFrame):
 
 #%%  Получить векторное представление по номеру артикула
 
-@app.route('/cluster/<string:product>/')
-def get_clust(product):
-    num_clusters = 5
-    num_products = 100
+@app.route('/cluster/<string:product>/<int:clusters>/<int:num_products>/<int:products_for_cluster>')
+def get_clust(product, clusters, num_products, products_for_cluster):
+    num_clusters = clusters
+    num_products = num_products
+    products_for_cluster = products_for_cluster
+    if products_for_cluster * num_clusters:
+        num_products = products_for_cluster * num_clusters
 
-    predict = list(pd.DataFrame(model.predict_output_word([product], topn=100))[0])
+    predict = list(pd.DataFrame(model.predict_output_word([product], topn=num_products))[0])
     X = list_to_X(predict)
 
     kmeans = KMeans(n_clusters=num_clusters, init='k-means++', random_state=42)
@@ -222,7 +253,8 @@ def get_clust(product):
 
     products_df = pd.DataFrame(predict, columns=['product']).astype(str)
     products_df = products_df.merge(bdd_rms, on='product')
-    test = products_df.merge(bdd_rms, on='product')
+
+    print(products_df)
 
     products_df['cluster'] = labels
 
