@@ -11,19 +11,12 @@ import numpy as np
 
 from flask_cors import CORS
 
-model_num = 7 # Какую из моделей использовать
+model_num = 0 # Какую из моделей использовать
 
 similar_qty = 10  # Количество похожих товаров
 
 models_list = [
-    'models/word2vec/w2v_mymodel_33_min50_sg0_i220_window5_size300',               #
-    'models/word2vec/w2v_mymodel_33_min1000_sg0_i200_window5_size300',             # ------------
-    'models/word2vec/w2v_mymodel_33_min5_sg0_i250_window3_size300_transSplit',     #
-    'models/word2vec/w2v_mymodel_33_min1000_sg0_i200_window5_size300',  # ------------
-    'models/word2vec/w2v_mymodel_33_mincount1_min1_sg0_i230_window5_size300',      #
-    'models/word2vec/test_29 of 81 nodes_250 alpha_ 0.0025 epochs_ 100 windows_ 4 time_0_02_20_155266',
-    'models/word2vec/w2v_mymodel_33_minСount5_minSumm30_i220_window6_size160',
-    'models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size150',
+    'models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size90',
 ]
 
 # Общие требования: sg1 - не использовать
@@ -42,13 +35,13 @@ bdd_rms['product'] = bdd_rms['product'].astype(str)
 
 
 model = Word2Vec.load(models_list[model_num])
-model_forecast = Word2Vec.load(models_list[3])
+model_forecast = Word2Vec.load(models_list[0])
 
 app = Flask(__name__)
 CORS(app)
 
-model_clusters = Word2Vec.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size150')
-word_vectors = KeyedVectors.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size150')
+model_clusters = Word2Vec.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size90')
+word_vectors = KeyedVectors.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size90')
 
 
 #%% API
@@ -238,37 +231,35 @@ def convert_df_to_json(df: pd.DataFrame):
 
 @app.route('/cluster/<string:product>/<int:clusters>/<int:num_products>/<int:products_for_cluster>')
 def get_clust(product, clusters, num_products, products_for_cluster):
-    num_clusters = clusters
-    num_products = num_products
-    products_for_cluster = products_for_cluster
-    if products_for_cluster * num_clusters:
-        num_products = products_for_cluster * num_clusters
+
+    if products_for_cluster * clusters > num_products:
+        num_products = products_for_cluster * clusters
 
     predict = list(pd.DataFrame(model.predict_output_word([product], topn=num_products))[0])
-    X = list_to_X(predict)
 
-    kmeans = KMeans(n_clusters=num_clusters, init='k-means++', random_state=42)
+    predict_df = pd.DataFrame(model.predict_output_word([product], topn=num_products), columns=['product', 'probability'])
+    predict_list = list(predict_df['product'])
+
+    X = list_to_X(predict_list)
+
+    kmeans = KMeans(n_clusters=clusters, init='k-means++', random_state=42)
     kmeans.fit_predict(X)
     labels = list(kmeans.labels_)
+    products_df = predict_df.merge(bdd_rms, on='product')
 
-    products_df = pd.DataFrame(predict, columns=['product']).astype(str)
-    products_df = products_df.merge(bdd_rms, on='product')
-
-    print(products_df)
 
     products_df['cluster'] = labels
+    products_df = products_df.sort_values(by='probability', ascending=False)
+
 
     cluster_list = list(products_df['cluster'].unique())
 
     clusters_list = []
     for cl in cluster_list:
         cluster_df = products_df[products_df['cluster'] == cl]
-        cluster_products = []
-        for index, row in cluster_df.iterrows():
-            product = str(row[0])
-            product_name = str(row[5])
-            cluster_products.append({'product': product, 'product_name': product_name})
-        clusters_list.append({'cluster_num': str(cl + 1), 'products': cluster_products})
+
+        cluster_dict = cluster_df.to_dict('records')
+        clusters_list.append({'cluster_num': str(cl + 1), 'products': cluster_dict})
 
     return jsonify({'clusters': clusters_list})
 
