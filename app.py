@@ -16,8 +16,11 @@ model_num = 0 # Какую из моделей использовать
 similar_qty = 10  # Количество похожих товаров
 
 models_list = [
-    'models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size90',
+    'models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size130',
+    'models/word2vec/w2v_33m_min500rub_sg0_i220_window8_size130_during_after',
 ]
+
+model_categorical = Word2Vec.load('models/word2vec/w2v_33m_categorical')
 
 # Общие требования: sg1 - не использовать
 # Скорость обучения и количество эпох (количество) - и скорость 0,005 пока лучший результат 220 достаточно
@@ -34,18 +37,45 @@ bdd_rms = pd.read_excel('library/BDD.xlsx', names=['product',
 bdd_rms['product'] = bdd_rms['product'].astype(str)
 
 
-model = Word2Vec.load(models_list[model_num])
-model_forecast = Word2Vec.load(models_list[0])
+model = Word2Vec.load(models_list[0])
+model_forecast = Word2Vec.load(models_list[1])
+model_clusters = Word2Vec.load(models_list[0])
+word_vectors = KeyedVectors.load(models_list[0])
+
 
 app = Flask(__name__)
 CORS(app)
 
-model_clusters = Word2Vec.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size90')
-word_vectors = KeyedVectors.load('models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size90')
 
 
 #%% API
 
+
+def predict_categories(product, num):
+    model_adeo = bdd_rms[bdd_rms['product'] == product]['model_adeo'].values[0]
+    prediction = pd.DataFrame(model_categorical.predict_output_word([model_adeo], topn=num),
+                              columns=['model_adeo', 'probability'])
+
+    prediction = prediction.merge(bdd_rms, on='model_adeo', how='inner')
+    prediction = prediction.drop_duplicates(subset='model_adeo', keep='first')
+
+    prediction = prediction.to_dict(('records'))
+
+    return prediction
+
+#print(predict_categories('18743611'))
+
+
+#%%
+
+@app.route('/categorical_predict/<string:product>/<int:qty>')
+def get_predict_categories(product, qty):
+    predict = predict_categories(product, qty)
+
+    return jsonify(predict)
+
+
+#%%
 
 @app.route('/most_similar/<string:product>/<int:qty>')
 def get_most_similar(product, qty):
@@ -72,7 +102,7 @@ def get_most_similar(product, qty):
     return jsonify({'similars': similars_dict, 'model_time': model_time, 'all_time': all_time})
 
 
-#%%
+#%% Analogs
 
 @app.route('/analogs/<string:product>/')
 def get_analogs(product):
@@ -146,27 +176,22 @@ def get_supplementary(products):
 
     return jsonify(supplementary)
 
-
+#%% Получить прогноз покупок
 @app.route('/forecast/<string:products>/')
 def get_forec(products):
 
     products_list = products.split(',')
 
     #  Получаем датафрейм с аналогами
-    forecast_df_main = get_forecast(products_list, num_models=10, num_products=10)
+    forecast_during_df, forecast_after_df = get_forecast(products_list)
 
-    #  Сортируем и отбираем данные, возвращаем датафрейм
-    forecast_df_cut_sort = cut_and_sort(forecast_df_main,
-                                       min_products=1,
-                                       max_products=3,
-                                       num_models=2,
-                                       sort_by_stm=False,
-                                       sort_by_date=False)
+    forecast_during = forecast_during_df.to_dict('records')
+    forecast_after = forecast_after_df.to_dict('records')
 
-    #  Конвертируем в формат json
-    supplementary = convert_df_to_json(forecast_df_cut_sort)
+    return_obj = {'forecast_during': forecast_during, 'forecast_after': forecast_after}
 
-    return jsonify(supplementary)
+
+    return jsonify(return_obj)
 
 
 #%%  Конвертировать в json
@@ -508,10 +533,10 @@ def get_forecast(products: list, num_models=10, num_products=10, remove_used_mod
     Возвращает:
         predicted (list): список таблиц pd.DataFrame
     """
-    start_time = datetime.now()
+
     analogs = pd.DataFrame(columns=['product', 'probability', 'model_adeo', 'name'])
 
-    predicted = model_forecast.predict_output_word(products, topn=(len(products) + num_products)*num_models*2)
+    predicted = model_forecast.predict_output_word(products, topn=1000)
 
     predicted = pd.DataFrame(predicted, columns=['product', 'probability'])
 
@@ -521,28 +546,39 @@ def get_forecast(products: list, num_models=10, num_products=10, remove_used_mod
     for product in products:
         predicted = predicted[predicted['product'] != product]
 
+    # Удаляем позиции без знака +
+
+    predicted = predicted[predicted['product'].str.slice(0, 8) != predicted['product']]
+
+    predicted_during = predicted[predicted['product'].str.slice(8, 10) == '+'].copy()
+    predicted_during['product'] = predicted_during['product'].str.slice(0, 8)
+    predicted_after = predicted[predicted['product'].str.slice(8, 10) == '++'].copy()
+    predicted_after['product'] = predicted_after['product'].str.slice(0, 8)
+
     # Подтягиваем модель и название
-    predicted = predicted.merge(bdd_rms, on='product')
+    predicted_during = predicted_during.merge(bdd_rms, on='product')
+    predicted_after = predicted_after.merge(bdd_rms, on='product')
 
-    print(predicted)
-
-    # оставляем только с плюсом
-    predicted = predicted[predicted['product'].str.find("+") != -1]
-
-    predicted['product'] = predicted['product'].str.slice(0, 8)
+    # print(predicted)
 
     if remove_used_models:
         current_models = []
         for product in products:
             current_models.append(list(bdd_rms[bdd_rms['product'] == str(product)]['model_adeo'])[0])
         for model_adeo in current_models:
-            predicted = predicted[predicted['model_adeo'] != model_adeo]
+            predicted_during = predicted_during[predicted_during['model_adeo'] != model_adeo]
+            predicted_after = predicted_after[predicted_after['model_adeo'] != model_adeo]
 
-    predicted = predicted.sort_values(by='probability', ascending=False)
+    predicted_during = predicted_during.sort_values(by='probability', ascending=False)
+    predicted_during = predicted_during.drop_duplicates(subset='product', keep='first')
 
-    predicted = predicted.drop_duplicates(subset='product', keep='first')
+    predicted_after = predicted_after.sort_values(by='probability', ascending=False)
+    predicted_after = predicted_after.drop_duplicates(subset='product', keep='first')
 
-    return predicted
+    return [predicted_during, predicted_after]
+
+
+# test_forecast = get_forecast(['81953451'])
 
 
 #%%
