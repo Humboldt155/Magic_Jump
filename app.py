@@ -16,11 +16,11 @@ model_num = 0 # Какую из моделей использовать
 similar_qty = 10  # Количество похожих товаров
 
 models_list = [
-    'models/word2vec/w2v_33m_min20rub_sg0_i220_window7_size130',
-    'models/word2vec/w2v_33m_min500rub_sg0_i220_window8_size130_during_after',
+    'models/w2v_39m_min5rub_sg0_i220_window9_size150',
+    'models/w2v_33m_min500rub_sg0_i220_window8_size130_during_after',
 ]
 
-model_categorical = Word2Vec.load('models/word2vec/w2v_33m_categorical')
+model_categorical = Word2Vec.load('models/w2v_33m_categorical')
 
 # Общие требования: sg1 - не использовать
 # Скорость обучения и количество эпох (количество) - и скорость 0,005 пока лучший результат 220 достаточно
@@ -42,11 +42,22 @@ model_forecast = Word2Vec.load(models_list[1])
 model_clusters = Word2Vec.load(models_list[0])
 word_vectors = KeyedVectors.load(models_list[0])
 
+#%%
+all_products = pd.DataFrame(list(word_vectors.wv.vocab), columns=['product'])
+all_products['is_in'] = 1
+
+bdd_rms = bdd_rms.merge(all_products, on='product')
+
 
 app = Flask(__name__)
 CORS(app)
 
+#%%  Получить векторное представление по номеру артикула
 
+
+def list_to_X(products: list):
+    vectors = np.array(list(word_vectors.wv.get_vector(str(prod)) for prod in products))
+    return vectors
 
 #%% API
 
@@ -252,6 +263,40 @@ def convert_df_to_json(df: pd.DataFrame):
     return result
 
 
+#%% Кластеризация модели
+
+@app.route('/model_clusters/<string:model>/<int:clusters>/<int:differences>')
+def get_model_clusters(model, clusters, differences):
+
+    model_products = bdd_rms[bdd_rms['model_adeo'] == model]
+
+    X = list_to_X(list(model_products['product'].unique()))
+
+    kmeans = KMeans(n_clusters=clusters, init='k-means++', random_state=42)
+
+    kmeans.fit_predict(X)
+
+    labels = list(kmeans.labels_)
+
+    model_products['cluster'] = labels
+
+    cluster_list = list(model_products['cluster'].unique())
+
+    clusters_list = []
+    for cl in cluster_list:
+        cluster_df = model_products[model_products['cluster'] == cl]
+
+        cluster_dict = cluster_df.to_dict('records')
+        clusters_list.append({'cluster_num': str(cl + 1), 'products': cluster_dict})
+
+    print(clusters_list)
+
+    return jsonify({'clusters': clusters_list})
+
+#%% Кластеризация категории
+
+
+
 #%%  Получить векторное представление по номеру артикула
 
 @app.route('/cluster/<string:product>/<int:clusters>/<int:num_products>/<int:products_for_cluster>')
@@ -274,6 +319,7 @@ def get_clust(product, clusters, num_products, products_for_cluster):
 
 
     products_df['cluster'] = labels
+    print()
     products_df = products_df.sort_values(by='probability', ascending=False)
 
 
@@ -290,13 +336,6 @@ def get_clust(product, clusters, num_products, products_for_cluster):
 
 #X = get_clust('18745342')
 
-
-#%%  Получить векторное представление по номеру артикула
-
-
-def list_to_X(products: list):
-    vectors = np.array(list(word_vectors.wv.get_vector(str(prod)) for prod in products))
-    return vectors
 
 
 predict = list(pd.DataFrame(model.predict_output_word(['12317240'], topn=100))[0])
